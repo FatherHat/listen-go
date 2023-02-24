@@ -6,6 +6,7 @@ Server类
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"sync"
 )
@@ -55,15 +56,33 @@ func (this *Server) BroadCast(user *User, msg string) {
 // Handler业务方法
 func (this *Server) handler(conn net.Conn) {
 
-	user := NewUser(conn)
+	user := NewUser(conn, this)
 
-	//用户上线，将用户加入到nolineMap中
-	this.mapLock.Lock() //加锁
-	this.OnlineMap[user.Name] = user
-	this.mapLock.Unlock() //释放锁
+	//用户上线
+	user.OffLine()
 
-	//广播当前用户上线消息
-	this.BroadCast(user, "已上线")
+	//接收客户端发送的消息
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := conn.Read(buf)
+			if n == 0 {
+				//用户下线
+				user.OffLine()
+				return
+			}
+			//io.EOF表示文件的末尾，读到文件的末尾是非法的操作
+			if err != nil && err != io.EOF {
+				fmt.Println("Conn Read err:", err)
+			}
+
+			//提取用户的消息（去除'\n'）,:号表示读取范围
+			msg := string(buf[:n-1])
+
+			//用户针对msg处理
+			user.DoMessage(msg)
+		}
+	}()
 
 	//阻塞hanler
 	select {}
